@@ -36,6 +36,7 @@ from ..const import (
     CONF_MAX_TOKENS,
     CONF_MAX_TOOL_ITERATIONS,
     CONF_KEEP_ALIVE,
+    CONF_LLM_WAIT_FILLER,
     CONF_PRUNE_TOOL_SCHEMAS,
     CONF_RESPONSE_TIMEOUT,
     CONF_SELF_ECHO_FILTER,
@@ -63,6 +64,7 @@ from ..const import (
     DEFAULT_MAX_RESULTS,
     DEFAULT_MAX_TOOL_ITERATIONS,
     DEFAULT_KEEP_ALIVE,
+    DEFAULT_LLM_WAIT_FILLER,
     DEFAULT_PRUNE_TOOL_SCHEMAS,
     DEFAULT_RESPONSE_TIMEOUT,
     DEFAULT_SELF_ECHO_FILTER,
@@ -234,6 +236,10 @@ def _advanced_schema(current: dict[str, Any], hass: Any) -> vol.Schema:
             vol.Optional(
                 CONF_VOICE_MODE,
                 default=current.get(CONF_VOICE_MODE, DEFAULT_VOICE_MODE),
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_LLM_WAIT_FILLER,
+                default=current.get(CONF_LLM_WAIT_FILLER, DEFAULT_LLM_WAIT_FILLER),
             ): selector.BooleanSelector(),
             vol.Optional(
                 CONF_CONTINUE_CONVERSATION,

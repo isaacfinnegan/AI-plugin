@@ -594,6 +594,7 @@ class Orchestrator(
         device_id: str | None = None,
         user_id: str | None = None,
         on_delta=None,
+        on_llm_start=None,
     ) -> str:
         """Process a user message and return the assistant's reply.
 
@@ -991,7 +992,14 @@ class Orchestrator(
                 )
 
             # 5. Call LLM — native tool loop when tools available, plain
-            #    completion otherwise.
+            #    completion otherwise. The per-request callback emits only an
+            #    external progress event; it is deliberately invoked after
+            #    messages are built and never receives or mutates history.
+            if on_llm_start is not None:
+                try:
+                    on_llm_start()
+                except Exception:  # noqa: BLE001
+                    _LOGGER.debug("AI Plugin: LLM-start callback failed", exc_info=True)
             try:
                 if tool_schemas:
                     reply, tool_msgs = await self._tool_loop(

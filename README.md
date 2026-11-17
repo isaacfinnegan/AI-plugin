@@ -375,6 +375,7 @@ On a 7–12B model, latency is won or lost in three places:
 | Listen for a follow-up | Always | Always / Let the AI decide / Never (see [Follow-up listening](#follow-up-listening)) |
 | Quiet gap before listening again | `0` s | Above 0, the plugin reopens the microphone itself once the room is quiet |
 | Enable thinking | off | Lets reasoning models emit chain-of-thought (slower; disables streaming) |
+| Speak a waiting message before LLM replies | off | Experimental voice-only preamble. It is sent through HA's streaming-TTS listener, not an announcement service, and never enters the model/chat history. It only runs when HA provides that listener for the active satellite pipeline. |
 | Max tool iterations | `10` | Cap on LLM↔tool round trips per turn |
 | Timeout | `30` s | Per LLM call. MCP tools have their own 15 s cap. |
 | Temperature / top_p / Max tokens | unset | Sampling. 1.0 / 0.4 / 512 recommended for gemma-4-12B. |
@@ -404,7 +405,8 @@ On a 7–12B model, latency is won or lost in three places:
 | "Model reports no tool-calling capability" | The config flow checked Ollama's `/api/show`. Pick a tool-capable model. |
 | Model asks questions instead of acting | Lower the temperature to 0.1–0.3, or use a stronger tool-calling model. |
 | Slow first reply after a quiet period | Set **Ollama keep-alive**. |
-| Replies don't start speaking early | Streaming needs the Ollama backend and a streaming-capable TTS engine. Other setups get the full reply at once. |
+| Replies don't start speaking early | Streaming needs the Ollama backend and a streaming-capable TTS engine. Other setups get the full reply at once. The integration declares pipeline streaming, but a provider using the buffered `async_chat_stream` fallback cannot produce early final-reply audio. |
+| The waiting message does not play | It is not an announcement and has no fallback: it depends on HA exposing a `ChatLog.delta_listener` for that active streaming Assist pipeline and on the satellite/TTS consuming its event. The HA UI/chat diagnostics may show the final reply but not this transient event. |
 | *Let the AI decide* listens after every reply | The model is closing with filler questions. Add "Do not end with a question unless you need an answer" to the system prompt, or try a stronger model. |
 | The assistant answers itself in a loop | Replies are playing on a separate speaker. See [Follow-up listening](#follow-up-listening). |
 | Timer LEDs count down but there's no sound | The ring plays on the satellite's own speaker. Enable **Announce timers**. |

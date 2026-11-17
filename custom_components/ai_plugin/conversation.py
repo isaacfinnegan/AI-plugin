@@ -28,6 +28,8 @@ from .const import (
     CONF_FEEDBACK_LOOP_DEVICES,
     CONF_FOLLOW_UP_DELAY,
     CONF_CONVERSATION_MEMORY,
+    CONF_LLM_WAIT_FILLER,
+    DEFAULT_LLM_WAIT_FILLER,
     CONF_SELF_ECHO_FILTER,
     CONVERSATION_CLOSE_PHRASES,
     DEFAULT_FOLLOW_UP_DELAY,
@@ -958,12 +960,71 @@ class AIPluginConversationEntity(conversation.ConversationEntity):
                 _LOGGER.debug("AI Plugin: chat-log delta stream failed", exc_info=True)
 
         def _on_delta(text: str) -> None:
-            nonlocal consumer
+            nonlocal consumer, final_streamed
+            final_streamed = True
             queue.put_nowait(text)
             if consumer is None:
                 consumer = asyncio.get_running_loop().create_task(_consume())
 
         stream_capable = hasattr(chat_log, "async_add_delta_content_stream")
+        # This is intentionally not sent through _on_delta: that path uses
+        # ChatLog.async_add_delta_content_stream and persists an assistant
+        # message. HA currently exposes delta_listener for the streaming TTS
+        # event itself, which lets this opt-in progress line remain audio-only.
+        # It is an internal HA interface, so do nothing when it is absent.
+        #
+        # This does not call an announcement service: announcements are a
+        # separate pipeline turn and can play outside this satellite's Assist
+        # session. The listener only exists when HA has wired this turn to its
+        # streaming-TTS pipeline, so the feature is necessarily best-effort.
+        delta_listener = getattr(chat_log, "delta_listener", None)
+        wait_filler_enabled = (
+            self._entry.options.get(CONF_LLM_WAIT_FILLER, DEFAULT_LLM_WAIT_FILLER)
+            and stream_capable
+            and callable(delta_listener)
+            and self._orchestrator.is_voice_device(user_input.device_id)
+        )
+        wait_filler_sent = False
+        final_streamed = False
+
+        def _on_llm_start() -> None:
+            """Emit one transient streaming-TTS preamble for this LLM turn."""
+            nonlocal wait_filler_sent
+            if not wait_filler_enabled or wait_filler_sent:
+                return
+            wait_filler_sent = True
+            try:
+                # 61 characters clears HA's current streaming-TTS threshold.
+                # Do not use async_add_delta_content_stream here: it would put
+                # this preamble in the model-visible chat history.
+                filler = "One moment while I check that. ".ljust(61)
+                delta_listener(chat_log, {
+                    "role": "assistant",
+                    "content": filler,
+                })
+                # The filler is audible audio from this satellite, so it must
+                # be an echo candidate just like the final reply. Keeping it
+                # only in the per-device echo store avoids adding it to the
+                # ChatLog or the model's conversation history.
+                self._remember_reply(user_input.device_id, filler)
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("AI Plugin: LLM wait filler failed", exc_info=True)
+
+        def _stream_final_if_needed(reply: str) -> None:
+            """Complete HA's filler-started TTS stream for buffered replies."""
+            nonlocal final_streamed
+            # HA 2026.11 starts one TTS input stream as soon as the transient
+            # preamble crosses its streaming threshold. From that point it does
+            # not synthesize the returned plain speech separately. A buffered
+            # OpenAI-compatible provider has no deltas of its own, and a safety
+            # gate can deliberately withhold them, so put the authoritative
+            # final reply on that same stream when it has not already done so.
+            # This remains one persisted assistant message (the queue consumer),
+            # while the filler stays out of both chat/model history.
+            if wait_filler_sent and reply and not final_streamed:
+                _on_delta(reply)
+                final_streamed = True
+
         if is_echo:
             # Skip the LLM entirely; nothing to say, nothing to record.
             reply = ""
@@ -976,11 +1037,14 @@ class AIPluginConversationEntity(conversation.ConversationEntity):
                     device_id=user_input.device_id,
                     user_id=user_id,
                     on_delta=_on_delta if stream_capable else None,
+                    on_llm_start=_on_llm_start if wait_filler_enabled else None,
                 )
+                _stream_final_if_needed(reply)
             except OrchestratorError as exc:
                 _LOGGER.error("AI Plugin error processing message: %s", exc)
                 _lang = (user_input.language or "en").split("-")[0].lower()
                 reply = f"{L.template('err_process', _lang)} ({exc})"
+                _stream_final_if_needed(reply)
             finally:
                 if consumer is not None:
                     queue.put_nowait(None)

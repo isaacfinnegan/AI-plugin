@@ -67,6 +67,11 @@ ECHO_MIN_TOKENS = 4
 ECHO_MATCH_THRESHOLD = 0.7
 CONF_SUMMARIZATION_ENABLED = "summarization_enabled"
 CONF_VOICE_MODE = "voice_mode"
+# Experimental: emit a transient, audio-only progress line immediately before
+# the first LLM request on a real voice satellite. It never enters model or
+# conversation history. It requires HA streaming TTS and satellite support.
+CONF_LLM_WAIT_FILLER = "llm_wait_filler"
+DEFAULT_LLM_WAIT_FILLER = False
 CONF_CONTINUE_CONVERSATION = "continue_conversation"
 # 'Listen for follow-up' modes. Stored under CONF_CONTINUE_CONVERSATION,
 # which held a bool until v0.9.55 — follow_up_mode() maps old installs

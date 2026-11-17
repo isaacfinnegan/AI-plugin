@@ -123,6 +123,7 @@ class _StubChatLog:
         self.conversation_id = conversation_id or str(_uuid_mod.uuid4())
         self.deltas: list[str] = []
         self.content: list = []
+        self.delta_listener = None
 
     async def async_add_delta_content_stream(self, agent_id, stream):
         text = ""
